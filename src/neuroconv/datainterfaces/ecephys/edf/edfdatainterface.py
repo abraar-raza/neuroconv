@@ -3,7 +3,7 @@ from pydantic import FilePath
 from ..baserecordingextractorinterface import BaseRecordingExtractorInterface
 from ....tools import get_package
 from ....utils import DeepDict
-
+from spikeinterface.extractors import EDFRecordingExtractor
 
 class EDFRecordingInterface(BaseRecordingExtractorInterface):
     """
@@ -39,6 +39,7 @@ class EDFRecordingInterface(BaseRecordingExtractorInterface):
         verbose: bool = False,
         es_key: str = "ElectricalSeries",
         channels_to_skip: list | None = None,
+        read_annotations=True,
     ):
         """
         Load and prepare data for EDF.
@@ -63,7 +64,7 @@ class EDFRecordingInterface(BaseRecordingExtractorInterface):
             excluded_platforms_and_python_versions=dict(darwin=dict(arm=["3.9"])),
         )
 
-        super().__init__(file_path=file_path, verbose=verbose, es_key=es_key, channels_to_skip=channels_to_skip)
+        super().__init__(file_path=file_path, read_annotations=read_annotations, verbose=verbose, es_key=es_key, channels_to_skip=channels_to_skip)
         self.edf_header = self.recording_extractor.neo_reader.edf_header
 
         # We remove the channels that are not neural
