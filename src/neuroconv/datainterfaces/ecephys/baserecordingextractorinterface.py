@@ -315,6 +315,8 @@ class BaseRecordingExtractorInterface(BaseExtractorInterface):
         iterator_type: str | None = "v2",
         iterator_opts: dict | None = None,
         always_write_timestamps: bool = False,
+        start_time: float | None = None,
+        end_time: float | None = None,
     ):
         """
         Primary function for converting raw (unprocessed) RecordingExtractor data to the NWB standard.
@@ -372,7 +374,10 @@ class BaseRecordingExtractorInterface(BaseExtractorInterface):
         """
         from ...tools.spikeinterface import _stub_recording, add_recording_to_nwbfile
 
-        recording = self.recording_extractor
+        # Crop the recording signa; between start_time and end_time (inclusive)
+        recording = self.recording_extractor.time_slice(
+            start_time=start_time, end_time=end_time
+        )
         if stub_test:
             recording = _stub_recording(recording=recording)
 

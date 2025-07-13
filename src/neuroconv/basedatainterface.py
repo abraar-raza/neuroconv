@@ -8,6 +8,9 @@ from typing import Literal
 from jsonschema.validators import validate
 from pydantic import FilePath, validate_call
 from pynwb import NWBFile
+import numpy as np
+from itertools import pairwise
+import os, datetime
 
 from .tools.nwb_helpers import (
     HDF5BackendConfiguration,
@@ -176,6 +179,78 @@ class BaseDataInterface(ABC):
         nwbfile_path: FilePath,
         nwbfile: NWBFile | None = None,
         metadata: dict | None = None,
+        tmin: float | None = None,
+        tmax: float | None = None,
+        chunk_size: float | None = None,
+        overwrite: bool = False,
+        backend: Literal["hdf5", "zarr"] | None = None,
+        backend_configuration: HDF5BackendConfiguration | ZarrBackendConfiguration | None = None,
+        append_on_disk_nwbfile: bool = False,
+        **conversion_options,
+    ):
+        """
+        Run the NWB conversion for the instantiated data interface.
+
+        Parameters
+        ----------
+        nwbfile_path : FilePath
+            Path for where to write or load (if overwrite=False) the NWBFile.
+        nwbfile : NWBFile, optional
+            An in-memory NWBFile object to write to the location.
+        metadata : dict, optional
+            Metadata dictionary with information used to create the NWBFile when one does not exist or overwrite=True.
+        tmin : float | None, optional
+            Starting time of the EDF segment to convert to NWB.
+        tmax: float | None, optional
+            Ending time of the EDF segment to convert to NWB.
+        chunk_size: float | None, optional
+            The chunk size in seconds of each NWB file written out. (tmax - tmin)//chunk_size equal sized NWB files will be written out, with the last one potentially having arbitrary size.
+        overwrite : bool, default: False
+            Whether to overwrite the NWBFile if one exists at the nwbfile_path.
+            The default is False (append mode).
+        backend : {"hdf5", "zarr"}, optional
+            The type of backend to use when writing the file.
+            If a `backend_configuration` is not specified, the default type will be "hdf5".
+            If a `backend_configuration` is specified, then the type will be auto-detected.
+        backend_configuration : HDF5BackendConfiguration or ZarrBackendConfiguration, optional
+            The configuration model to use when configuring the datasets for this backend.
+            To customize, call the `.get_default_backend_configuration(...)` method, modify the returned
+            BackendConfiguration object, and pass that instead.
+            Otherwise, all datasets will use default configuration settings.
+        append_on_disk_nwbfile : bool, default: False
+            Whether to append to an existing NWBFile on disk. If True, the `nwbfile` parameter must be None.
+            This is useful for appending data to an existing file without overwriting it.
+        """
+        
+        tmin = tmin if tmin is not None else 0
+        tmax = tmax if tmax is not None else self.recording_extractor.get_duration()
+        chunk_size = chunk_size if chunk_size is not None else tmax # Set chunk_size to tmax, this way only one split will be made if chunk_size is None
+
+        # Split tmin and tmax into segments of chunk size's seconds
+        splits = np.append(np.arange(tmin, tmax, chunk_size), tmax).tolist()
+        
+        for idx, (s, e) in enumerate(pairwise(splits)):
+            nwbfile_name = os.path.splitext(nwbfile_path)[0] + '_' + str(idx + 1).zfill(3) + '.nwb'
+            
+            # Since each chunk will be inclusive of the end time, set the next chunk's start time to one sample ahead
+            if idx != 0:
+                s = self.recording_extractor.sample_index_to_time(
+                    self.recording_extractor.time_to_sample_index(s) + 1
+                )
+            
+            self._run_conversion_core(
+                nwbfile_name, nwbfile, metadata, overwrite, 
+                backend, backend_configuration, append_on_disk_nwbfile,
+                start_time=s, end_time=e
+            )
+
+            print(f'===================================== COMPLETED {idx + 1} OF {len(splits) - 1} =====================================')
+    
+    def _run_conversion_core(
+        self,
+        nwbfile_path: FilePath,
+        nwbfile: NWBFile | None = None,
+        metadata: dict | None = None,
         overwrite: bool = False,
         backend: Literal["hdf5", "zarr"] | None = None,
         backend_configuration: HDF5BackendConfiguration | ZarrBackendConfiguration | None = None,
@@ -226,6 +301,11 @@ class BaseDataInterface(ABC):
 
         if metadata is None:
             metadata = self.get_metadata()
+
+            # If the start time is not zero, then the NWB's session start time should be moved ahead by the start time
+            if conversion_options['start_time']:
+                metadata['NWBFile']['session_start_time'] += datetime.timedelta(seconds=conversion_options['start_time'])
+
         self.validate_metadata(metadata=metadata, append_mode=append_on_disk_nwbfile)
 
         if not append_on_disk_nwbfile:

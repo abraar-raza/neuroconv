@@ -3,7 +3,7 @@ from pydantic import FilePath
 from ..baserecordingextractorinterface import BaseRecordingExtractorInterface
 from ....tools import get_package
 from ....utils import DeepDict
-from spikeinterface.extractors import EDFRecordingExtractor
+
 
 class EDFRecordingInterface(BaseRecordingExtractorInterface):
     """
